@@ -1,65 +1,219 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
+Parameters:
+
+    Region: 
+        Type: String
+
+    AccountID:
+        Type: String
+
+    Organization: 
+        Type: String
+        Description: Name of organization owned by the project
+
+    ProjectName: 
+        Type: String
+        Description: Name of project
+
+    ModelImage:
+        Type: String
+
 Resources:
 
     LambdaFunction:
         Type: AWS::Lambda::Function
-        Properties:
-          Runtime: nodejs12.x
-          Role: arn:aws:iam::123456789012:role/lambda-role
+        Properties:         
+          FunctionName: !Sub "${Organization}-${ProjectName}"
+          Description: !Sub "${Organization}'s ${ProjectName} Lambda Function"
+          Runtime: python3.6
+          Role: !GetAtt LambdaRole.Arn
           Handler: index.handler
           Code:
             ZipFile: |
-              var aws = require('aws-sdk')
-              var response = require('cfn-response')
-              exports.handler = function(event, context) {
-                  console.log("REQUEST RECEIVED:\n" + JSON.stringify(event))
-                  // For Delete requests, immediately send a SUCCESS response.
-                  if (event.RequestType == "Delete") {
-                      response.send(event, context, "SUCCESS")
-                      return
-                  }
-                  var responseStatus = "FAILED"
-                  var responseData = {}
-                  var functionName = event.ResourceProperties.FunctionName
-                  var lambda = new aws.Lambda()
-                  lambda.invoke({ FunctionName: functionName }, function(err, invokeResult) {
-                      if (err) {
-                          responseData = {Error: "Invoke call failed"}
-                          console.log(responseData.Error + ":\n", err)
-                      }
-                      else responseStatus = "SUCCESS"
-                      response.send(event, context, responseStatus, responseData)
-                  })
-              }
-          Description: Invoke a function during stack creation.
-          TracingConfig:
-            Mode: Active
+                import os
+                import io
+                import boto3
+                import json
+                import csv
+                
+                
+                # grab environment variables
+                ENDPOINT_NAME = os.environ['ENDPOINT_NAME']
+                # grab runtime client
+                runtime = boto3.client('runtime.sagemaker')
+                
+                def handler(event, context):
+                    # Load data from POST request
+                    data = json.loads(json.dumps(event))
+                    
+                    # Grab the payload
+                    payload = data['body']
+                    
+                    # Invoke the model. In this case the data type is a JSON but can be other things such as a CSV
+                    response = runtime.invoke_endpoint(EndpointName=ENDPOINT_NAME,
+                                                ContentType='application/json',
+                                                Body=payload)
+                    
+                    # Get the body of the response from the model
+                    result = response['Body'].read().decode()
+                
+                    # Return it along with the status code of 200 meaning this was succesful 
+                    return {
+                        'statusCode': 200,
+                        'body': result
+                    }
+          MemorySize: 128
+          Timeout: 60
+          KmsKeyArn: !GetAtt EndpointCMK.Arn
+        #   VpcConfig:
+        #     SecurityGroupIds:
+        #       - !Ref SecurityGroup
+        #     SubnetIds:
+        #       - subnet-c702d1a1
+        #       - subnet-7f805924
+          Environment:
+            Variables:
+                ENDPOINT_NAME: !GetAtt Endpoint.EndpointName
+
+    SecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupDescription: !Sub "${Organization} ${ProjectName} Lambda SecurityGroup"
+            GroupName: !Sub "${Organization}${ProjectName}"
+            SecurityGroupIngress: 
+            - IpProtocol: tcp
+              FromPort: 443
+              ToPort: 443
+              CidrIp: 0.0.0.0/0
+            SecurityGroupEgress: 
+            - IpProtocol: "-1"
+              CidrIp: 0.0.0.0/0
+            VpcId: vpc-3aaf895d
 
     Model:
         Type: "AWS::SageMaker::Model"
         Properties:
-            ModelName: iris-deploy
+            ModelName: !Sub "${Organization}-${ProjectName}-Model"
             PrimaryContainer:
-                Image: 977053370764.dkr.ecr.sa-east-1.amazonaws.com/iris
+                Image: !Ref ModelImage
                 Mode: SingleModel
             ExecutionRoleArn: !GetAtt ExecutionRole.Arn
 
     Endpoint:
         Type: "AWS::SageMaker::Endpoint"
         Properties:
+            EndpointName: !Sub "${Organization}-${ProjectName}-Endpoint"
             EndpointConfigName:
                 !GetAtt EndpointConfig.EndpointConfigName
 
     EndpointConfig:
+        DependsOn: EndpointCMK
         Type: "AWS::SageMaker::EndpointConfig"
         Properties:
+            EndpointConfigName: !Sub "${Organization}-${ProjectName}-EndpointConfig"
+            KmsKeyId: !Sub "alias/${ProjectName}"
             ProductionVariants:
                 - InitialInstanceCount: 1
                   InitialVariantWeight: 1.0
-                  InstanceType: ml.t2.large
+                  InstanceType: ml.t2.medium
                   ModelName: !GetAtt Model.ModelName
                   VariantName: !GetAtt Model.ModelName
+    
+    EndpointAliasCMK:
+        Type: AWS::KMS::Alias
+        Properties: 
+            AliasName: !Sub "alias/${ProjectName}"
+            TargetKeyId: !Ref EndpointCMK
+
+    EndpointCMK:
+        Type: AWS::KMS::Key
+        Properties: 
+            Description: !Sub "Endpoint Customer Master Key of ${Organization}'s ${ProjectName}"
+            Enabled: true
+            EnableKeyRotation: false
+            KeyPolicy: 
+                Version: '2012-10-17'
+                Id: key-default-1
+                Statement:
+                - Sid: Allow administration of the key
+                  Effect: Allow
+                  Principal: 
+                    AWS: "*"
+                  Action:
+                  - kms:Create*
+                  - kms:Describe*
+                  - kms:Enable*
+                  - kms:List*
+                  - kms:Put*
+                  - kms:Update*
+                  - kms:Revoke*
+                  - kms:Disable*
+                  - kms:Get*
+                  - kms:Delete*
+                  - kms:ScheduleKeyDeletion
+                  - kms:CancelKeyDeletion
+                  Resource: '*'
+                - Sid: Allow use of the key
+                  Effect: Allow
+                  Principal: 
+                    AWS: "*"
+                  Action:
+                  - kms:DescribeKey
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncrypt*
+                  - kms:GenerateDataKey
+                  - kms:GenerateDataKeyWithoutPlaintext
+                  Resource: '*'
+            KeyUsage: ENCRYPT_DECRYPT
+            PendingWindowInDays: 7
+            Tags: 
+                - Key: Project
+                  Value: !Ref ProjectName
+                - Key: Organization
+                  Value: !Ref Organization
+
+    LambdaRole: 
+        Type: "AWS::IAM::Role"
+        Properties: 
+            AssumeRolePolicyDocument: 
+                Version: "2012-10-17"
+                Statement: 
+                    - 
+                        Effect: "Allow"
+                        Principal: 
+                            Service: 
+                                - "lambda.amazonaws.com"
+                        Action: 
+                            - "sts:AssumeRole"
+            Path: "/"
+            Policies: 
+                -   
+                    PolicyName: "lambda-endpoint"
+                    PolicyDocument: 
+                        Version: "2012-10-17"
+                        Statement: 
+                            - 
+                                Effect: "Allow"
+                                Action: "lambda:*"
+                                Resource: "*"
+                            - 
+                                Effect: "Allow"
+                                Action: "sagemaker:*"
+                                Resource: "*"
+                            - 
+                                Effect: "Allow"
+                                Action: 
+                                    - logs:CreateLogStream
+                                    - logs:PutLogEvents
+                                Resource: "*"
+                            - 
+                                Effect: "Allow"
+                                Action: 
+                                    - xray:*
+                                    - ec2:*
+                                Resource: "*"
 
     ExecutionRole: 
         Type: "AWS::IAM::Role"
@@ -83,5 +237,9 @@ Resources:
                         Statement: 
                             - 
                                 Effect: "Allow"
-                                Action: "*"
+                                Action: "sagemaker:*"
+                                Resource: "*"
+                            - 
+                                Effect: "Allow"
+                                Action: "ecr:*"
                                 Resource: "*"

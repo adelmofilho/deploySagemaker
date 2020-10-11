@@ -1,0 +1,26 @@
+[
+    {
+        "ParameterKey": "Organization",
+        "ParameterValue": "mlworks"
+    },
+
+    {
+        "ParameterKey": "ProjectName",
+        "ParameterValue": "deployiris"
+    },
+
+    {
+        "ParameterKey": "Region",
+        "ParameterValue": "sa-east-1"
+    },
+
+    {
+        "ParameterKey": "AccountID",
+        "ParameterValue": "977053370764"
+    },
+
+    {
+        "ParameterKey": "ModelImage",
+        "ParameterValue": "977053370764.dkr.ecr.sa-east-1.amazonaws.com/iris"
+    }
+]
