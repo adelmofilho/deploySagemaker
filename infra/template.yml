@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+
+    LambdaFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+          Runtime: nodejs12.x
+          Role: arn:aws:iam::123456789012:role/lambda-role
+          Handler: index.handler
+          Code:
+            ZipFile: |
+              var aws = require('aws-sdk')
+              var response = require('cfn-response')
+              exports.handler = function(event, context) {
+                  console.log("REQUEST RECEIVED:\n" + JSON.stringify(event))
+                  // For Delete requests, immediately send a SUCCESS response.
+                  if (event.RequestType == "Delete") {
+                      response.send(event, context, "SUCCESS")
+                      return
+                  }
+                  var responseStatus = "FAILED"
+                  var responseData = {}
+                  var functionName = event.ResourceProperties.FunctionName
+                  var lambda = new aws.Lambda()
+                  lambda.invoke({ FunctionName: functionName }, function(err, invokeResult) {
+                      if (err) {
+                          responseData = {Error: "Invoke call failed"}
+                          console.log(responseData.Error + ":\n", err)
+                      }
+                      else responseStatus = "SUCCESS"
+                      response.send(event, context, responseStatus, responseData)
+                  })
+              }
+          Description: Invoke a function during stack creation.
+          TracingConfig:
+            Mode: Active
+
+    Model:
+        Type: "AWS::SageMaker::Model"
+        Properties:
+            ModelName: iris-deploy
+            PrimaryContainer:
+                Image: 977053370764.dkr.ecr.sa-east-1.amazonaws.com/iris
+                Mode: SingleModel
+            ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+
+    Endpoint:
+        Type: "AWS::SageMaker::Endpoint"
+        Properties:
+            EndpointConfigName:
+                !GetAtt EndpointConfig.EndpointConfigName
+
+    EndpointConfig:
+        Type: "AWS::SageMaker::EndpointConfig"
+        Properties:
+            ProductionVariants:
+                - InitialInstanceCount: 1
+                  InitialVariantWeight: 1.0
+                  InstanceType: ml.t2.large
+                  ModelName: !GetAtt Model.ModelName
+                  VariantName: !GetAtt Model.ModelName
+
+    ExecutionRole: 
+        Type: "AWS::IAM::Role"
+        Properties: 
+            AssumeRolePolicyDocument: 
+                Version: "2012-10-17"
+                Statement: 
+                    - 
+                        Effect: "Allow"
+                        Principal: 
+                            Service: 
+                                - "sagemaker.amazonaws.com"
+                        Action: 
+                            - "sts:AssumeRole"
+            Path: "/"
+            Policies: 
+                -   
+                    PolicyName: "root-sagemaker-endpoint"
+                    PolicyDocument: 
+                        Version: "2012-10-17"
+                        Statement: 
+                            - 
+                                Effect: "Allow"
+                                Action: "*"
+                                Resource: "*"
