@@ -2,12 +2,6 @@ AWSTemplateFormatVersion: "2010-09-09"
 
 Parameters:
 
-    Region: 
-        Type: String
-
-    AccountID:
-        Type: String
-
     Organization: 
         Type: String
         Description: Name of organization owned by the project
@@ -20,6 +14,46 @@ Parameters:
         Type: String
 
 Resources:
+
+    ApiGateway:
+        Type: AWS::ApiGateway::RestApi
+        Properties:
+            Description: "Rest API for mlworks irisdeploy"
+            EndpointConfiguration: 
+                Types: 
+                    - REGIONAL
+            Name: "mlworks-irisdeploy-restapi"
+
+    PostMethod:        
+        Type: AWS::ApiGateway::Method
+        Properties: 
+            AuthorizationType: NONE
+            HttpMethod: POST
+            Integration:
+                IntegrationHttpMethod: "POST"
+                Type: "AWS_PROXY"
+                Uri: !Sub
+                  - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+                  - lambdaArn: !GetAtt "LambdaFunction.Arn"
+            OperationName: predict
+            ResourceId: !GetAtt ApiGateway.RootResourceId
+            RestApiId: !Ref ApiGateway
+
+    lambdaApiGatewayInvoke:
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt "LambdaFunction.Arn"
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/"
+    
+    
+    ApiGatewayDeployment:
+        Type: "AWS::ApiGateway::Deployment"
+        DependsOn: PostMethod
+        Properties:
+            RestApiId: !Ref ApiGateway
+            StageName: iris
 
     LambdaFunction:
         Type: AWS::Lambda::Function
@@ -205,6 +239,7 @@ Resources:
                             - 
                                 Effect: "Allow"
                                 Action: 
+                                    - logs:CreateLogGroup
                                     - logs:CreateLogStream
                                     - logs:PutLogEvents
                                 Resource: "*"

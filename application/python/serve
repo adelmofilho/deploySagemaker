@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-from flask import Flask, Response
+from flask import Flask, Response, request, jsonify
+import dill
 
 app = Flask(__name__)
 
@@ -10,7 +11,11 @@ def ping():
 
 @app.route("/invocations", methods=["POST"])
 def predict():
-    return Response(response="predict here...", status=200)
+    payload = request.json["x"]
+    predict = model.predict(payload)
+    return Response(response=str(predict), status=200)
 
 if __name__ == "__main__":
+    with open("model.dill", "rb") as f:
+        model = dill.load(f)
     app.run(host="0.0.0.0", port=8080)
