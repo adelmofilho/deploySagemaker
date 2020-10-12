@@ -18,11 +18,11 @@ Resources:
     ApiGateway:
         Type: AWS::ApiGateway::RestApi
         Properties:
-            Description: "Rest API for mlworks irisdeploy"
+            Description: !Sub "${Organization}-${ProjectName}-restapi"
             EndpointConfiguration: 
                 Types: 
                     - REGIONAL
-            Name: "mlworks-irisdeploy-restapi"
+            Name: !Sub "${Organization}-${ProjectName}-restapi"
 
     PostMethod:        
         Type: AWS::ApiGateway::Method
@@ -53,7 +53,7 @@ Resources:
         DependsOn: PostMethod
         Properties:
             RestApiId: !Ref ApiGateway
-            StageName: iris
+            StageName: predict
 
     LambdaFunction:
         Type: AWS::Lambda::Function
@@ -266,7 +266,7 @@ Resources:
             Path: "/"
             Policies: 
                 -   
-                    PolicyName: "root-sagemaker-endpoint"
+                    PolicyName: !Sub "${ProjectName}-sagemaker-endpoint"
                     PolicyDocument: 
                         Version: "2012-10-17"
                         Statement: 
@@ -277,4 +277,9 @@ Resources:
                             - 
                                 Effect: "Allow"
                                 Action: "ecr:*"
+                                Resource: "*"
+
+                            - 
+                                Effect: "Allow"
+                                Action: "logs:*"
                                 Resource: "*"

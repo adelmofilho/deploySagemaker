@@ -1,0 +1,16 @@
+[
+    {
+        "ParameterKey": "Organization",
+        "ParameterValue": "mlworks"
+    },
+
+    {
+        "ParameterKey": "ProjectName",
+        "ParameterValue": "deployr"
+    },
+
+    {
+        "ParameterKey": "ModelImage",
+        "ParameterValue": "977053370764.dkr.ecr.sa-east-1.amazonaws.com/iris-r"
+    }
+]
