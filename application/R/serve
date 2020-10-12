@@ -1,7 +1,10 @@
 #!/usr/bin/env Rscript
 
+prefix <- "/opt/ml/"
+#prefix <- ""
+
 serve <- function() {
-    app <- plumber::plumb('/opt/ml/plumber.R')
+    app <- plumber::plumb(paste0(prefix, 'plumber.R'))
     app$run(host='0.0.0.0', port=8080)
 }
 

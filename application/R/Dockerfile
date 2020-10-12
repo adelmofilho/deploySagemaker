@@ -10,7 +10,7 @@ COPY renv.lock renv.lock
 
 RUN R -e "renv::restore()"
 
-COPY model.RDS /opt/ml/model
+COPY model.RDS /opt/ml/model/model.RDS
 COPY plumber.R /opt/ml/plumber.R
 
 COPY serve /usr/local/bin/serve
